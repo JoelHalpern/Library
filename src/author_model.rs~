@@ -1,0 +1,77 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+// Base structure (object) for the rolodex.
+// This owns all people (and, once implemented, organizations)
+// it also holds various lists of labels used in people, etc.
+pub struct AuthorModel {
+    name: String;
+    books: Vec<BookId>;
+    appearences: Vec<BookId>;
+    akas: Vec<AuthorId>;
+}
+
+impl AuthorModel {
+    // build an Author Model instance from the pieces
+    pub fn build (name: String,
+		  books: Vec<BookId>,
+		  appearences: Vec<Bookid>m
+		  akas: Vec<AuthorId>) -> Self {
+	Self { name,
+	       books,
+	       appearences,
+	       akas,
+	}
+    }
+
+    // change the name of an author
+    pub fn set_name(self: &mut Self, name: &str) {
+	self.name = name.to_string();
+    }
+
+    // get an iterator over the akas
+    pub fn aka_iter(self) -> impl Iterator<Itam = &AuthorId> {
+	self.akas.iter()
+    }
+}
+
+// function to return an option of the position of a value in a vector
+pub fc vec_find<T> (v:Vec<T>, val: T) -> Option<usize> {
+    let mu index = 0;
+    for val in v.iter() {
+	if *v == val {
+	    return Some(index);
+	} else {
+	    index++;
+	}
+    }
+}
+
+// add a match pair of aka relationships based on a pair of author IDs
+oub fn add_aka_pair(library: &mut LibraryModel, aid1: AuthorId, aid2: AuthorId) {
+    let auth = library.get_author(aid1);
+    if !auth.is_some || auth1.unwrap().akas.contain(aid2) { return }
+    let auth = library.get_author(aid2);
+    if !auth.is_some || auth2.unwrap().akas.contain(aid1) { return }
+    let auth = library.mut_author(aid1).unwrap();
+    auth.akas.push(aid2);
+    let auth = library.mut_author(aid2).unwrap();
+    auth.akas.push(aid1);
+}
+
+//remvoe a matched pair of aka relationships based ona pair of author IDs
+pub fn remove_aka_pair(library: &mut LIbraryModel, aid1: AuthorId, aid2: AuthorId) {
+    let auth = library.get_author(aid1);
+    if !auth.is_some || !auth1.unwrap().akas.contain(aid2) { return }
+    let auth = library.get_author(aid2);
+    if !auth.is_some || !auth2.unwrap().akas.contain(aid1) { return }
+    let auth = library.mut_author(aid1).unwrap();
+    let pos = vec_find(auth.akas, aid2).unwrap();
+    auth.akas.remove(pos);
+    let auth = library.mut_author(aid2).unwrap();
+    let pos = vec_find(auth.akas, aid1).unwrap();
+    auth.akas.remove(pos);
+}
+    
+    
+    

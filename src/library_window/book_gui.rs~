@@ -1,0 +1,596 @@
+use crate::book_model::{BookModel, ContentType, ItemInfo};
+use crate::library_model::{AuthorId, BookId, LibraryModel};
+use crate::library_window::author_list_gui::AuthorIdName;
+use crate::library_window::{LibraryGuiState, Message};
+use iced::widget::{
+    button, checkbox, column, combo_box, row, rule, scrollable, text, text_editor, text_input,
+};
+use iced::widget::{Button, Column};
+
+// messages for the author list pane
+#[derive(Debug, Clone)]
+pub enum BookMessage {
+    ChangeName(String),
+    Apply,
+    ToAuthor(AuthorId, String),
+    DelBookAuthor(usize),
+    DelEntryAuthor(usize, usize),
+    ChooseBookAuthor(AuthorIdName),
+    AddBookAuthor(),
+    AddEntryAuthor(usize, AuthorIdName),
+    DoAddEntryAuthor(usize),
+    EntryTitleInput(usize, String),
+    NewEntryInput(String),
+    AddEntryTitle,
+    SeriesEntry(String),
+    InSeriesEntry(String),
+    PublisherEntry(String),
+    IsbnEntry(String),
+    GenreEntry(String),
+    FormatEntry(String),
+    AnnotEntry(text_editor::Action),
+    IsColEntry(bool),
+    IsAnthEntry(bool),
+}
+
+#[derive(Debug, Clone)]
+pub struct BookInfoHolder {
+    pub title: String,
+    pub authors: Vec<AuthorId>,
+    author_choice: Option<AuthorIdName>,
+    author_picker: combo_box::State<AuthorIdName>,
+}
+
+impl BookInfoHolder {
+    fn new(alist: &Vec<AuthorIdName>) -> Self {
+        BookInfoHolder {
+            title: "".to_string(),
+            authors: Vec::new(),
+            author_choice: None,
+            author_picker: combo_box::State::new(alist.clone()),
+        }
+    }
+
+    fn new_title(title: &str, alist: &Vec<AuthorIdName>) -> Self {
+        BookInfoHolder {
+            title: title.to_string(),
+            authors: Vec::new(),
+            author_choice: None,
+            author_picker: combo_box::State::new(alist.clone()),
+        }
+    }
+
+    fn from_iteminfo(item: &ItemInfo, alist: &Vec<AuthorIdName>) -> Self {
+        BookInfoHolder {
+            title: item.title.clone(),
+            authors: item.authors.clone(),
+            author_choice: None,
+            author_picker: combo_box::State::new(alist.clone()),
+        }
+    }
+}
+
+// the gui state block when handling a single book
+#[derive(Debug, Clone)]
+pub struct BookGuiData {
+    author_list: Vec<AuthorIdName>,
+    pub bid: Option<BookId>,
+    edit: bool,
+    pub book: BookInfoHolder,
+    pub series: String,
+    pub in_series: String,
+    pub publisher: String,
+    pub isbn: String,
+    pub pubdate: String,
+    pub genre: String,
+    pub format: String,
+    pub annotation: text_editor::Content,
+    pub is_collection: bool,
+    pub is_anthology: bool,
+    pub contents: Vec<BookInfoHolder>,
+    temp_content_title: String,
+}
+
+impl Default for BookGuiData {
+    fn default() -> Self {
+        BookGuiData {
+            author_list: Vec::new(),
+            bid: None,
+            edit: false,
+            book: BookInfoHolder::new(&Vec::new()),
+            series: "".to_string(),
+            in_series: "".to_string(),
+            publisher: "".to_string(),
+            isbn: "".to_string(),
+            pubdate: "".to_string(),
+            genre: "".to_string(),
+            format: "".to_string(),
+            annotation: text_editor::Content::new(),
+            is_collection: false,
+            is_anthology: false,
+            contents: Vec::new(),
+            temp_content_title: "".to_string(),
+        }
+    }
+}
+
+impl BookGuiData {
+    // clean up the book data
+    // edit false for truly empty; edit true for adding a new book
+    pub fn clean(&mut self, lib: &LibraryModel, edit: bool) {
+        self.fill_author_list(lib);
+        self.bid = None;
+        self.edit = edit;
+        self.book = BookInfoHolder::new(&self.author_list);
+        self.series = "".to_string();
+        self.in_series = "".to_string();
+        self.publisher = "".to_string();
+        self.isbn = "".to_string();
+        self.pubdate = "".to_string();
+        self.genre = "".to_string();
+        self.format = "".to_string();
+        self.annotation = text_editor::Content::new();
+        self.is_collection = false;
+        self.is_anthology = false;
+        self.contents = Vec::new();
+        self.temp_content_title = "".to_string();
+    }
+
+    pub fn set_content(&mut self, lib: &LibraryModel, book: &BookModel, bid: BookId, edit: bool) {
+        self.clean(lib, edit);
+        self.bid = Some(bid.clone());
+        self.book = BookInfoHolder::from_iteminfo(&book.book, &self.author_list);
+        self.series = book.series.clone();
+        self.in_series = book.in_series.clone();
+        self.publisher = book.publisher.clone();
+        self.isbn = book.isbn.clone();
+        self.pubdate = book.pubdate.clone();
+        self.genre = book.genre.clone();
+        self.format = book.format.clone();
+        self.annotation = text_editor::Content::with_text(&book.annotation);
+        match book.content_type {
+            ContentType::Singular => {
+                self.is_collection = false;
+                self.is_anthology = false;
+            }
+            ContentType::Collection => {
+                self.is_collection = true;
+                self.is_anthology = false;
+            }
+            ContentType::Anthology => {
+                self.is_collection = true;
+                self.is_anthology = true;
+            }
+        }
+        self.contents = book
+            .contents
+            .iter()
+            .map(|iinfo| BookInfoHolder::from_iteminfo(&iinfo, &self.author_list))
+            .collect::<Vec<_>>();
+    }
+
+    // (re-)fill the master author list for combo_box(es)
+    pub fn fill_author_list(&mut self, library: &LibraryModel) {
+        self.author_list = library
+            .author_iter()
+            .map(|aid| AuthorIdName {
+                id: *aid,
+                name: library.get_author(aid).as_ref().unwrap().name.clone(),
+            })
+            .collect::<Vec<_>>();
+    }
+
+    // create a book from the data in the BookGuiData
+    pub fn mk_book(&self) -> BookModel {
+        BookModel::from_bookgui(&self)
+    }
+}
+
+// the update method to handle messages about a single book
+pub fn book_update(guistate: &mut LibraryGuiState, message: BookMessage) -> iced::Task<Message> {
+    match message {
+        BookMessage::ChangeName(instr) => {
+            guistate.book_state.book.title = instr.clone();
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::Apply => {
+            let book = guistate.book_state.mk_book();
+            match guistate.book_state.bid {
+                Some(bid) => guistate.library.as_mut().unwrap().replace_book(bid, &book),
+                None => {
+                    let bid = guistate.library.as_mut().unwrap().add_book(&book);
+                    guistate.book_state.bid = Some(bid);
+                }
+            }
+            guistate.mainpanel_dirty = false;
+            guistate.database_dirty = true;
+        }
+        BookMessage::ToAuthor(aid, namestr) => {
+            if !guistate.mainpanel_dirty {
+                guistate.to_author(aid, &namestr);
+            }
+        }
+        BookMessage::DelBookAuthor(idx) => {
+            guistate.book_state.book.authors.remove(idx);
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::ChooseBookAuthor(aidn) => {
+            guistate.book_state.book.author_choice = Some(aidn.clone());
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::AddBookAuthor() => {
+            let aih = guistate.book_state.book.author_choice.as_ref().unwrap();
+            guistate.book_state.book.authors.push(aih.id);
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::EntryTitleInput(cidx, title) => {
+            guistate.book_state.contents[cidx].title = title;
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::NewEntryInput(title) => {
+            guistate.book_state.temp_content_title = title;
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::AddEntryTitle => {
+            guistate.book_state.contents.push(BookInfoHolder::new_title(
+                &guistate.book_state.temp_content_title, &guistate.book_state.author_list
+            ));
+            guistate.book_state.temp_content_title = "".to_string();
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::DelEntryAuthor(aidx, _aid) => {
+            guistate.book_state.contents[aidx].authors.remove(aidx);
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::AddEntryAuthor(cidx, aidn) => {
+            guistate.book_state.contents[cidx].author_choice = Some(aidn.clone());
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::DoAddEntryAuthor(cidx) => {
+            let aid = guistate.book_state.contents[cidx]
+                .author_choice
+                .as_ref()
+                .unwrap().id;
+            guistate.book_state.contents[cidx].authors.push(aid);
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::SeriesEntry(sstr) => {
+            guistate.book_state.series = sstr.clone();
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::InSeriesEntry(sstr) => {
+            guistate.book_state.in_series = sstr.clone();
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::PublisherEntry(sstr) => {
+            guistate.book_state.publisher = sstr.clone();
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::IsbnEntry(sstr) => {
+            guistate.book_state.isbn = sstr.clone();
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::GenreEntry(sstr) => {
+            guistate.book_state.genre = sstr.clone();
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::FormatEntry(sstr) => {
+            guistate.book_state.format = sstr.clone();
+            guistate.mainpanel_dirty = true;
+        }
+        BookMessage::AnnotEntry(action) => {
+            guistate.mainpanel_dirty |= action.is_edit();
+            guistate.book_state.annotation.perform(action);
+        }
+        BookMessage::IsColEntry(isset) => {
+            guistate.mainpanel_dirty |= guistate.book_state.is_collection != isset;
+            guistate.book_state.is_collection = isset;
+        }
+        BookMessage::IsAnthEntry(isset) => {
+            guistate.mainpanel_dirty |= guistate.book_state.is_anthology != isset;
+            guistate.book_state.is_anthology = isset;
+        }
+    }
+    iced::Task::none()
+}
+
+// view function for looking at a book
+pub fn book_view(guistate: &LibraryGuiState) -> Column<'_, Message> {
+    if !guistate.book_state.edit {
+        display_book(guistate)
+    } else {
+        edit_book(guistate)
+    }
+}
+
+// function to display a boog
+pub fn display_book(guistate: &LibraryGuiState) -> Column<'_, Message> {
+    let content_col =
+        if !guistate.book_state.is_collection {
+            column![]
+        } else if !guistate.book_state.is_anthology {
+            column![
+                text("Entries: "),
+                column(
+                    guistate
+                        .book_state
+                        .contents
+                        .iter()
+                        .map(|bih| { text(bih.title.clone()).into() })
+                ),
+            ]
+        } else {
+            column![
+                text("Entries: "),
+                column(guistate.book_state.contents.iter().map(|bih| {
+                    column![
+                        text(bih.title.clone()),
+                        column(bih.authors.iter().map(|aid| {
+                            row![text("    "), author_button(guistate, aid),].into()
+                        }))
+                    ]
+                    .into()
+                })),
+            ]
+        };
+
+    column![
+        text(guistate.book_state.book.title.clone()),
+        column(
+            guistate
+                .book_state
+                .book
+                .authors
+                .iter()
+                .map(|aid| { row![text("    "), author_button(guistate, aid),].into() })
+        ),
+        row![
+            text("Series: "),
+            text(guistate.book_state.series.clone()),
+            text("  Series Detail: "),
+            text(guistate.book_state.in_series.clone()),
+        ],
+        row![
+            text("Publisher: "),
+            text(guistate.book_state.publisher.clone()),
+            text(" isbn: "),
+            text(guistate.book_state.isbn.clone()),
+            text(" date: "),
+            text(guistate.book_state.pubdate.clone()),
+        ],
+        row![
+            text("Genre: "),
+            text(guistate.book_state.genre.clone()),
+            text("Format: "),
+            text(guistate.book_state.format.clone()),
+        ],
+	row![
+	    text("Annotation: "),
+	    text(guistate.book_state.annotation.text()).wrapping(text::Wrapping::Word),
+	    ],
+        rule::horizontal(1),
+        scrollable(content_col),
+    ]
+}
+
+// function to allow editing of information about a book
+pub fn edit_book(guistate: &LibraryGuiState) -> Column<'_, Message> {
+    let content_col = if !guistate.book_state.is_collection {
+        column![]
+    } else if !guistate.book_state.is_anthology {
+        column![
+            text("Entries: "),
+            column(
+                guistate
+                    .book_state
+                    .contents
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, bih)| {
+                        text_input(&bih.title, &bih.title)
+                            .on_input(move |instr| {
+                                Message::BookMessages(BookMessage::EntryTitleInput(idx, instr))
+                            })
+                            .into()
+                    })
+            ),
+            row![
+                text_input("", &guistate.book_state.temp_content_title)
+                    .on_input(|instr| Message::BookMessages(BookMessage::NewEntryInput(instr))),
+                button("add").on_press(Message::BookMessages(BookMessage::AddEntryTitle)),
+            ],
+        ]
+    } else {
+        column![
+            text("Entries: "),
+            column(
+                guistate
+                    .book_state
+                    .contents
+                    .iter()
+                    .enumerate()
+                    .map(|(cidx, bih)| {
+                        column![
+                            text_input(&bih.title, &bih.title).on_input(move |instr| {
+                                Message::BookMessages(BookMessage::EntryTitleInput(
+                                    cidx, instr,
+                                ))
+                            }),
+                            column(bih.authors.iter().enumerate().map(|(aidx, aid)| {
+                                row![
+                                    text("    "),
+                                    author_button(guistate, aid),
+                                    button("Del")
+                                        .on_press(Message::BookMessages(
+                                            BookMessage::DelEntryAuthor(cidx, aidx)
+                                        ))
+                                        .style(iced::widget::button::danger),
+                                ].into()
+                            })),
+                            row![
+                                combo_box(
+                                    &guistate.book_state.contents[cidx].author_picker,
+                                    "Possible Authors",
+                                    (&guistate.book_state.contents[cidx].author_choice)
+                                        .as_ref(),
+                                    move |aidn| Message::BookMessages(
+                                        BookMessage::AddEntryAuthor(cidx, aidn)
+                                    )
+                                ),
+                                button("Add").on_press_maybe(
+                                    guistate.book_state.contents[cidx]
+                                        .author_choice
+                                        .is_some()
+                                        .then(|| Message::BookMessages(
+                                            BookMessage::DoAddEntryAuthor(cidx)
+                                        ))
+                                ),
+                            ],
+                        ].into()
+                    }
+            )),
+            row![
+		text_input("", &guistate.book_state.temp_content_title)
+                    .on_input(|instr| Message::BookMessages(BookMessage::NewEntryInput(instr))),
+		button("add").on_press(Message::BookMessages(BookMessage::AddEntryTitle)),
+            ],
+	]
+    };
+
+    column![
+        row![
+            text("Title: "),
+            text_input(
+                &guistate.book_state.book.title,
+                &guistate.book_state.book.title
+            )
+            .on_input(|instr| Message::BookMessages(BookMessage::ChangeName(instr))),
+            text("    "),
+            button("Apply").on_press_maybe(
+                (guistate.mainpanel_dirty && !guistate.book_state.book.title.is_empty())
+                    .then(|| Message::BookMessages(BookMessage::Apply))
+            ),
+        ],
+        column(
+            guistate
+                .book_state
+                .book
+                .authors
+		.iter()
+                .enumerate()
+                .map(|(aidx, aid)| {
+                    row![
+                        text("    "),
+                        author_button(guistate, aid),
+                        button("Del")
+                            .on_press(Message::BookMessages(BookMessage::DelBookAuthor(aidx)))
+                            .style(iced::widget::button::danger),
+                    ].into()
+                })
+        ),
+        row![
+            combo_box(
+                &guistate.book_state.book.author_picker,
+                "Possible Authors",
+                (&guistate.book_state.book.author_choice).as_ref(),
+                |aidn| Message::BookMessages(BookMessage::ChooseBookAuthor(aidn)
+            )),
+            button("Add").on_press_maybe(
+                guistate
+                    .book_state
+                    .book
+                    .author_choice
+                    .is_some()
+                    .then(|| Message::BookMessages(BookMessage::AddBookAuthor()))
+            ),
+        ],
+        rule::horizontal(1),
+        row![
+            text("Series: "),
+            text_input(
+                &guistate.book_state.series,
+                &guistate.book_state.series
+            )
+            .on_input(|instr| Message::BookMessages(BookMessage::SeriesEntry(instr))),
+        ],
+        row![
+            text("  Detail: "),
+            text_input(
+                &guistate.book_state.in_series,
+                &guistate.book_state.in_series
+            )
+            .on_input(|instr| Message::BookMessages(BookMessage::InSeriesEntry(instr))),
+        ],
+        row![
+            text("Publisher: "),
+            text_input(
+                &guistate.book_state.publisher,
+                &guistate.book_state.publisher
+            )
+            .on_input(|instr| Message::BookMessages(BookMessage::PublisherEntry(instr))),
+        ],
+        row![
+            text("ISBN: "),
+            text_input(
+                &guistate.book_state.isbn,
+                &guistate.book_state.isbn
+            )
+            .on_input(|instr| Message::BookMessages(BookMessage::IsbnEntry(instr))),
+        ],
+        row![
+            text("Genre: "),
+            text_input(
+                &guistate.book_state.genre,
+                &guistate.book_state.genre
+            )
+            .on_input(|instr| Message::BookMessages(BookMessage::GenreEntry(instr))),
+        ],
+        row![
+            text("Format: "),
+            text_input(
+                &guistate.book_state.format,
+                &guistate.book_state.format
+            )
+            .on_input(|instr| Message::BookMessages(BookMessage::FormatEntry(instr))),
+        ],
+        row![
+            text("Annotation: "),
+            text_editor(&guistate.book_state.annotation)
+                .placeholder("")
+                .on_action(move |act| Message::BookMessages(BookMessage::AnnotEntry(act))),
+        ],
+        row![
+            text("        "),
+            checkbox(guistate.book_state.is_collection)
+                .label("Collection: ")
+                .on_toggle_maybe(
+                    (!guistate.book_state.is_anthology)
+                        .then(|| |toggle| Message::BookMessages(BookMessage::IsColEntry(toggle)))
+                ),
+            text("        "),
+            checkbox(guistate.book_state.is_anthology)
+                .label("Anthology: ")
+                .on_toggle_maybe(
+                    guistate
+                        .book_state
+                        .is_collection
+                        .then(|| |toggle| Message::BookMessages(BookMessage::IsAnthEntry(toggle)))
+                ),
+            text("        "),
+        ],
+        rule::horizontal(1),
+        content_col,
+    ]
+}
+
+// function to produce a button to go to an author based on AuthorId
+pub fn author_button<'a>(guistate: &'a LibraryGuiState, aid: &'a AuthorId) -> Button<'a, Message> {
+    let lib = guistate.library.as_ref().unwrap();
+    let binding = lib.get_author(aid);
+    let author = &binding.as_ref().unwrap();
+    button(text(author.name.clone())).on_press_maybe(
+        (!guistate
+            .mainpanel_dirty)
+            .then(|| Message::BookMessages(BookMessage::ToAuthor(*aid, author.name.clone()))),
+    )
+}

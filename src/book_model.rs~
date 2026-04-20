@@ -1,0 +1,64 @@
+use crate::library_model::{AuthorId};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+// Base structure (object) for the rolodex.
+// This owns all people (and, once implemented, organizations)
+// it also holds various lists of labels used in people, etc.
+pub struct BookModel {
+    book: ItemInfo,
+    pub series: String,
+    pub in_series: String,
+    pub publisher: String,
+    pub isbn: String,
+    pub pubdate: String,
+    pub genre: String,
+    pub format: String,
+    pub annotation: String,
+    pub content_type: ContentType,
+    pub contents: Vec<ItemInfo>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum ContentType {
+    Singular,
+    COllection,
+    Anthology,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ItemInfo {
+    pub title: String,
+    pub authors: Vec<AuthorId>,
+}
+
+impl BookModel {
+    pub fn new(name: &str) -> Self {
+	BookModel {
+	    book: ItemInfo {
+		title: name.to_string(),
+		authors: Vec::new(),
+	    },
+	    series: "".to_string(),
+	    in_series: "".to_string(),
+	    publisher: "".to_string(),
+	    isbn: "".to_string(),
+	    pubdate: "".to_string(),
+	    genre: "".to_string(),
+	    format: "".to_string(),
+	    annotation: "".to_string(),
+	    content_type: ContentType::Singular,
+	    contents: Vec::new(),
+	}
+    }
+
+    // extract the title of a book
+    pub fn title(&self) -> &str {
+	&self.book.title
+    }
+
+    // get an iterator over the ids of authors of a book
+    pub fn author_iter(&self) -> impl Iterator<Item = &AuthorId> {
+	self.book.authors.iter()
+    }
+}

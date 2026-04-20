@@ -1,0 +1,244 @@
+use crate::library_model::BookId;
+use crate::library_window::{LibraryGuiState, MainPanelEnum, Message};
+use iced::widget::Column;
+use iced::widget::column;
+use iced::widget::{button, row, rule, table, text, text_input};
+// use iced::{Element, Length};
+
+// messages for the author list pane
+#[derive(Debug, Clone)]
+pub enum BookListMessage {
+    DisplayBook(BookId, String),
+    AddBook,
+    EditBook(BookId, String),
+    DelBook(BookId),
+    TitleFilter(String),
+    AuthorFilter(String),
+    SeriesFilter(String),
+    InSeriesFilter(String),
+    PublisherFilter(String),
+    GenreFilter(String),
+    FormatFilter(String),
+}
+
+// state holder for book list specific gui information
+#[derive(Debug, Clone, Default)]
+pub struct BookListGuiData {
+    name_filter: String,
+    series_filter: String,
+    series_info_filter: String,
+    author_filter: String,
+    publisher_filter: String,
+    genre_filter: String,
+    format_filter: String,
+    filtered_books: Vec<BookIdName>,
+}
+
+impl BookListGuiData {
+    // clean up all the gui filters
+    pub fn clean(&mut self) {
+        self.name_filter = "".to_string();
+        self.series_filter = "".to_string();
+        self.series_info_filter = "".to_string();
+        self.author_filter = "".to_string();
+        self.publisher_filter = "".to_string();
+        self.genre_filter = "".to_string();
+        self.format_filter = "".to_string();
+        self.filtered_books = Vec::new();
+    }
+}
+
+// fix the filtered book list
+pub fn fix_filtered_books(guistate: &mut LibraryGuiState) {
+    let list = guistate
+        .library
+        .as_ref()
+        .unwrap()
+        .book_iter()
+        .filter(|bid| filter_book(guistate, **bid))
+        .map(|bid| BookIdName {
+            id: *bid,
+            name: guistate
+                .library
+                .as_ref()
+                .unwrap()
+                .get_book(*bid)
+                .unwrap()
+                .title()
+                .to_string(),
+        })
+        .collect::<Vec<_>>();
+    
+    list.sort_by(|bin1, bin2| bin1.name.cmp(&bin2.name);
+    guistate.book_list_state.filtered_books = list;
+}
+
+// update handler for the book list screen
+pub fn book_list_update(
+    guistate: &mut LibraryGuiState,
+    message: BookListMessage,
+) -> iced::Task<Message> {
+    match message {
+        BookListMessage::DisplayBook(bid, _name) => guistate.set_book(bid, false),
+        BookListMessage::AddBook => {
+            guistate.main_state.panel_state = MainPanelEnum::Book;
+            let lib = guistate.library.as_ref().unwrap();
+            guistate.book_state.clean(lib, true);
+        }
+        BookListMessage::EditBook(bid, _name) => guistate.set_book(bid, true),
+        BookListMessage::DelBook(aid) => {
+            guistate.library.as_mut().unwrap().delete_book(aid);
+            guistate.database_dirty = true;
+        }
+        BookListMessage::TitleFilter(instr) => {
+            guistate.book_list_state.name_filter = instr.trim().to_string();
+            fix_filtered_books(guistate);
+        }
+        BookListMessage::AuthorFilter(instr) => {
+            guistate.book_list_state.author_filter = instr.trim().to_string();
+            fix_filtered_books(guistate);
+        }
+        BookListMessage::SeriesFilter(instr) => {
+            guistate.book_list_state.series_filter = instr.trim().to_string();
+            fix_filtered_books(guistate);
+        }
+        BookListMessage::InSeriesFilter(instr) => {
+            guistate.book_list_state.series_info_filter = instr.trim().to_string();
+            fix_filtered_books(guistate);
+        }
+        BookListMessage::PublisherFilter(instr) => {
+            guistate.book_list_state.publisher_filter = instr.trim().to_string();
+            fix_filtered_books(guistate);
+        }
+        BookListMessage::GenreFilter(instr) => {
+            guistate.book_list_state.genre_filter = instr.trim().to_string();
+            fix_filtered_books(guistate);
+        }
+        BookListMessage::FormatFilter(instr) => {
+            guistate.book_list_state.format_filter = instr.trim().to_string();
+            fix_filtered_books(guistate);
+        }
+    }
+    iced::Task::none()
+}
+
+// Book ID, Name pair
+#[derive(Debug, Clone)]
+pub struct BookIdName {
+    pub id: BookId,
+    pub name: String,
+}
+
+// a fromater for the AuthorIDName that formats just the name part so
+// that a combo_box can use it for selection
+impl std::fmt::Display for BookIdName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.name)
+    }
+}
+
+fn filter_book(guistate: &LibraryGuiState, bid: BookId) -> bool {
+    match &guistate.library.as_ref().unwrap().get_book(bid) {
+        None => {
+            return false;
+        }
+        Some(book) => {
+            let spec = &guistate.book_list_state;
+            if !(book.title().contains(&spec.name_filter)
+                && book.series.contains(&spec.series_filter)
+                && book.in_series.contains(&spec.series_info_filter)
+                && book.publisher.contains(&spec.publisher_filter)
+                && book.genre.contains(&spec.genre_filter)
+                && book.format.contains(&spec.format_filter))
+            {
+                return false;
+            }
+            if !spec.author_filter.is_empty()
+                && let Some(lib) = &guistate.library
+            {
+                for aid in book.author_iter() {
+                    match &lib.get_author(aid) {
+                        None => (),
+                        Some(auth) => {
+                            if auth.name.contains(&spec.author_filter) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                return false;
+            }
+        }
+    }
+    true
+}
+
+// view handler for the book lsit screen
+pub fn book_list_view<'a>(guistate: &'a LibraryGuiState) -> Column<'a, Message> {
+    let book_columns = vec![
+        iced::widget::table::column("Title", |bidn: &BookIdName| {
+            button(text(bidn.name.clone()))
+                .on_press(Message::BookListMessages(BookListMessage::DisplayBook(
+                    bidn.id,
+                    bidn.name.clone(),
+                )))
+                .style(iced::widget::button::text)
+        }),
+        iced::widget::table::column("", |bidn: &BookIdName| {
+            button("Edit").on_press(Message::BookListMessages(BookListMessage::EditBook(
+                bidn.id,
+                bidn.name.clone(),
+            )))
+        }),
+        iced::widget::table::column("", |bidn: &BookIdName| {
+            button("Del")
+                .on_press(Message::BookListMessages(BookListMessage::DelBook(bidn.id)))
+                .style(iced::widget::button::danger)
+        }),
+    ];
+    if guistate.library.is_none() {
+        return column![];
+    }
+
+    column![
+        row![
+            button("Add Book").on_press(Message::BookListMessages(BookListMessage::AddBook)),
+            text("   Book Listing   "),
+            text("Filters:"),
+        ],
+        row![
+            text("Title: "),
+            text_input("", &guistate.book_list_state.name_filter)
+                .on_input(|instr| Message::BookListMessages(BookListMessage::TitleFilter(instr))),
+            text("  Author: "),
+            text_input("", &guistate.book_list_state.author_filter)
+                .on_input(|instr| Message::BookListMessages(BookListMessage::AuthorFilter(instr))),
+        ],
+        row![
+            text("Series: "),
+            text_input("", &guistate.book_list_state.series_filter)
+                .on_input(|instr| Message::BookListMessages(BookListMessage::SeriesFilter(instr))),
+            text("  Info: "),
+            text_input("", &guistate.book_list_state.series_info_filter).on_input(|instr| {
+                Message::BookListMessages(BookListMessage::InSeriesFilter(instr))
+            }),
+        ],
+        row![
+            text("Publisher: "),
+            text_input("", &guistate.book_list_state.publisher_filter).on_input(|instr| {
+                Message::BookListMessages(BookListMessage::PublisherFilter(instr))
+            }),
+        ],
+        row![
+            text("Genre: "),
+            text_input("", &guistate.book_list_state.genre_filter)
+                .on_input(|instr| Message::BookListMessages(BookListMessage::GenreFilter(instr))),
+            text("  Format: "),
+            text_input("", &guistate.book_list_state.format_filter)
+                .on_input(|instr| Message::BookListMessages(BookListMessage::FormatFilter(instr))),
+        ],
+        rule::horizontal(1),
+        text("Books"),
+        table(book_columns, guistate.book_list_state.filtered_books.iter()),
+    ]
+}

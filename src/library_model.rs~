@@ -1,0 +1,156 @@
+use crate::author_model::AuthorModel;
+use crate::book_model::BookModel;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+// Base structure (object) for the rolodex.
+// This owns all people (and, once implemented, organizations)
+// it also holds various lists of labels used in people, etc.
+pub struct LibraryModel {
+    name: String,
+    next_author_id: BookId,
+    books: HashMap<BookId, BookModel>,
+    next_book_id: AuthorId,
+    authors: HashMap<AuthorId, AuthorModel>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+// Type wrapper for Book Ids
+pub struct BookId(usize);
+
+impl BookId {
+    // create an initial (minimal) BookId
+    pub fn start() -> Self {
+        Self(0)
+    }
+}
+
+// impl the AsRef trait for BookId so that we can access the private inner usize value
+impl AsRef<usize> for BookId {}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+// Type wrapper for Author IDs
+pub struct AuthorId(usize);
+
+impl AuthorId {
+    // create an initial (minimal) AuthorID
+    pub fn start() -> Self {
+        Self(0)
+    }
+}
+
+// impl the AsRef trait for BookId so that we can access the private inner usize value
+impl AsRef<usize> for AuthorId {}
+
+// to create a new ID, use id = IdType::new(id.as_ref()+1);
+
+impl LibraryModel {
+    // Create an empty library with the given name
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            next_author_id: AuthorId::start(),
+            next_book_id: BookId::start(),
+            books: HashMap::new(),
+            authors: HashMap::new(),
+        }
+    }
+
+    // get the name of this library
+    pub fn name(self) -> &str {
+        self.name
+    }
+
+    // set the name of this library
+    pub fn name(self: &mut Self, name: &str) {
+        self.name = name.to_string();
+    }
+
+    // get an Option Reference to a book by a BookId
+    pub fn get_book(self, id: BookId) -> &Option<BookModel> {
+        self.books.get(id)
+    }
+
+    // get a mutable reference to a book
+    pub fn mut_book(self: &mut self, id: BookId) -> Option<&mut BookModel> {
+        self.books.get_mut(id)
+    }
+
+    // add a new book
+    pub fn add_book(self, book: &BookModel) -> BookId {
+        let bookid = self.next_book_id;
+        self.books.insert(bookid, book.clone());
+        self.next_book_id = BookId::new(self.next_book_id.as_ref() + 1);
+        bookid
+    }
+
+    // replace the book with a given ID
+    pub fn replace_book(self, id: BookId, book: &BookModel) {
+        self.books.insert(id, book.clone());
+    }
+
+    // get an Option Reference to an author by an AuthorId
+    pub fn get_author(self, id: AuthorId) -> &Option<AuthorModel> {
+        self.authors.get(id)
+    }
+
+    // get a mutable (option of a) reference to an Author
+    pub fn mut_author(self: &mut self, id: AuthorId) -> Option<&mut AuthorModel> {
+        self.authors.get_mut(id)
+    }
+
+    // add a new author
+    pub fn add_author(self, author: &AuthorModel) -> AuthorId {
+        let authorid = self.next_author_id;
+        self.authors.insert(authorid, author.clone());
+        self.next_author_id = BookId::new(self.next_author_id.as_ref() + 1);
+        authorid
+    }
+
+    // replace the author with a given ID
+    pub fn replace_author(self, aid: AuthorId, author: &AuthorModel) {
+        self.authors.insert(aid, author.clone());
+    }
+
+    // check that there are no references to a given author in the library
+    pub fn check_auth_noref(self, aid: AuthorId) -> bool {
+        if let Some(lib) = self.library {
+            if let Some(auth) = lib.authors.get(aid) {
+                auth.books.is_empty() && auth.appearences.is_empty() && auth.akas.is_empty()
+            } else {
+                true
+            }
+        } else {
+            true
+        }
+    }
+
+    // delete an author entry
+    // assumes that check_auth_noref has been called
+    pub fn delete_author(self: &mut self, aid: AuthorId) {
+        if let Some(lib) = self.library {
+	    lib.authors.remove(aid);
+	}
+    }
+
+    // get an iterator over the author IDs
+    pub fn author_iter(&self) -> impl Iterator<Item = &AuthorId> {
+        self.authors.iter()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn basic_library() {
+        let mut lib = LibraryModel::new("TestName");
+        let name = lib.name();
+        assert_eq!(name, "TestName");
+        lib.set_name("TestName2");
+        let name = lib.name();
+        assert_eq!(name, "TestName2");
+    }
+}
